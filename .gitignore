@@ -33,6 +33,11 @@ lambda/**/*.zip
 .env.*
 !.env.example
 
+# Private keys / local infra artifacts
+*.pem
+key.tmp
+instance_output.json
+
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -41,3 +46,4 @@ lambda/**/*.zip
 .Trashes
 ehthumbs.db
 Thumbs.db
+node_modules
