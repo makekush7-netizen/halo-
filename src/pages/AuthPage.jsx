@@ -174,7 +174,7 @@ export default function AuthPage({ mode = 'login' }) {
               </div>
             ) : (
               <>
-                {orgMode && !isLogin && (
+                {orgMode && (
                   <div>
                     <label className="label">Organization Name</label>
                     <input

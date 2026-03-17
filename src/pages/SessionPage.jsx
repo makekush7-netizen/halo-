@@ -15,6 +15,14 @@ import ParticipantGrid from '../components/ParticipantGrid.jsx'
 
 const STORAGE_ASSIGNMENTS_KEY = 'halo_room_assignments'
 
+function toOrgId(value) {
+  return (value || 'personal').toString().trim().toLowerCase().replace(/\s+/g, '-')
+}
+
+function assignmentsStorageKey(orgId) {
+  return `${STORAGE_ASSIGNMENTS_KEY}_${orgId || 'personal'}`
+}
+
 export default function SessionPage() {
   const { roomId } = useParams()
   const location = useLocation()
@@ -81,7 +89,9 @@ export default function SessionPage() {
 
   const assignments = (() => {
     try {
-      return JSON.parse(sessionStorage.getItem(STORAGE_ASSIGNMENTS_KEY) || '{}')
+      const orgName = sessionStorage.getItem('halo_org_name') || ''
+      const orgId = toOrgId(orgName)
+      return JSON.parse(sessionStorage.getItem(assignmentsStorageKey(orgId)) || '{}')
     } catch {
       return {}
     }

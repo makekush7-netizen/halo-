@@ -47,3 +47,4 @@ instance_output.json
 ehthumbs.db
 Thumbs.db
 node_modules
+.vercel

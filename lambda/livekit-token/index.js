@@ -32,9 +32,15 @@ export const handler = async (event) => {
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
     const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
 
+    const safeName = String(participantName).trim()
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    // LiveKit requires identity uniqueness per room. If two users join with same name,
+    // a shared identity would kick/replace the first participant.
+    const uniqueIdentity = `${safeName}-${suffix}`
+
     const at = new AccessToken(apiKey, apiSecret, {
-      identity: participantName,
-      name: participantName,
+      identity: uniqueIdentity,
+      name: safeName,
     });
     
     // Add grants allowing the user to publish/subscribe audio/video in the requested room

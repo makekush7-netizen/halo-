@@ -9,6 +9,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const STORAGE_MEMBERS_KEY = 'halo_org_members'
 const STORAGE_ASSIGNMENTS_KEY = 'halo_room_assignments'
 
+function membersStorageKey(orgId) {
+  return `${STORAGE_MEMBERS_KEY}_${orgId || 'personal'}`
+}
+
+function assignmentsStorageKey(orgId) {
+  return `${STORAGE_ASSIGNMENTS_KEY}_${orgId || 'personal'}`
+}
+
 function roleLabel(role) {
   if (role === 'member') return 'teacher'
   return role
@@ -18,9 +26,9 @@ function toOrgId(value) {
   return (value || 'personal').toString().trim().toLowerCase().replace(/\s+/g, '-')
 }
 
-function loadMembers(user) {
+function loadMembers(user, orgId) {
   try {
-    const stored = JSON.parse(sessionStorage.getItem(STORAGE_MEMBERS_KEY) || '[]')
+    const stored = JSON.parse(sessionStorage.getItem(membersStorageKey(orgId)) || '[]')
     if (stored.length > 0) {
       return stored.map((member) => ({
         ...member,
@@ -41,20 +49,20 @@ function loadMembers(user) {
   ]
 }
 
-function saveMembers(members) {
-  sessionStorage.setItem(STORAGE_MEMBERS_KEY, JSON.stringify(members))
+function saveMembers(members, orgId) {
+  sessionStorage.setItem(membersStorageKey(orgId), JSON.stringify(members))
 }
 
-function loadAssignments() {
+function loadAssignments(orgId) {
   try {
-    return JSON.parse(sessionStorage.getItem(STORAGE_ASSIGNMENTS_KEY) || '{}')
+    return JSON.parse(sessionStorage.getItem(assignmentsStorageKey(orgId)) || '{}')
   } catch {
     return {}
   }
 }
 
-function saveAssignments(assignments) {
-  sessionStorage.setItem(STORAGE_ASSIGNMENTS_KEY, JSON.stringify(assignments))
+function saveAssignments(assignments, orgId) {
+  sessionStorage.setItem(assignmentsStorageKey(orgId), JSON.stringify(assignments))
 }
 
 function SpatialSessionCard({ session, onClick }) {
@@ -214,9 +222,9 @@ function CreateRoomModal({ isOpen, onClose, orgMembers, user, isAdmin, orgId }) 
       const data = await res.json()
 
       setCreatedRoom({ id: data.roomId, name: data.name, host: data.host, status })
-      const assignments = loadAssignments()
+      const assignments = loadAssignments(orgId)
       assignments[data.roomId] = Array.from(assignedEmails)
-      saveAssignments(assignments)
+      saveAssignments(assignments, orgId)
     } catch (err) {
       console.error(err)
       alert(err.message)
@@ -365,12 +373,12 @@ export default function CockpitPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
-  const [members, setMembers] = useState(() => loadMembers(user))
-  const [memberForm, setMemberForm] = useState({ name: '', email: '', role: 'member' })
   const role = user?.role || 'member'
   const isAdmin = role === 'admin' || role === 'co-admin'
-  const [mySessionsOnly, setMySessionsOnly] = useState(!isAdmin)
   const orgId = toOrgId(user?.orgName)
+  const [members, setMembers] = useState(() => loadMembers(user, orgId))
+  const [memberForm, setMemberForm] = useState({ name: '', email: '', role: 'member' })
+  const [mySessionsOnly, setMySessionsOnly] = useState(!isAdmin)
 
   const fetchRooms = async () => {
     setLoading(true)
@@ -406,11 +414,11 @@ export default function CockpitPage() {
 
   useEffect(() => {
     if (user) {
-      const initial = loadMembers(user)
+      const initial = loadMembers(user, orgId)
       setMembers(initial)
-      saveMembers(initial)
+      saveMembers(initial, orgId)
     }
-  }, [user])
+  }, [user, orgId])
 
   const handleSignOut = async () => {
     await signOut()
@@ -435,7 +443,7 @@ export default function CockpitPage() {
       },
     ]
     setMembers(next)
-    saveMembers(next)
+    saveMembers(next, orgId)
     setMemberForm({ name: '', email: '', role: 'member' })
   }
 
@@ -446,15 +454,17 @@ export default function CockpitPage() {
       return { ...member, role: 'co-admin' }
     })
     setMembers(next)
-    saveMembers(next)
+    saveMembers(next, orgId)
   }
 
   const handleResetLocalTestData = () => {
+    sessionStorage.removeItem(membersStorageKey(orgId))
+    sessionStorage.removeItem(assignmentsStorageKey(orgId))
     sessionStorage.removeItem(STORAGE_MEMBERS_KEY)
     sessionStorage.removeItem(STORAGE_ASSIGNMENTS_KEY)
-    const initial = loadMembers(user)
+    const initial = loadMembers(user, orgId)
     setMembers(initial)
-    saveMembers(initial)
+    saveMembers(initial, orgId)
     alert('Local cockpit test data cleared. Remote AWS rooms are unchanged.')
   }
 

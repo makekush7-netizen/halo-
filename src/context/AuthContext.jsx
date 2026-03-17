@@ -167,13 +167,20 @@ export function AuthProvider({ children }) {
   }
 
   async function handleSignOut() {
-    await signOut()
-    setUser(null)
-    sessionStorage.removeItem('halo_user')
-    sessionStorage.removeItem('halo_role')
-    sessionStorage.removeItem('halo_org_name')
-    sessionStorage.removeItem('halo_org_verified')
-    sessionStorage.removeItem(DEMO_USER_KEY)
+    try {
+      if (isCognitoConfigured()) {
+        await signOut()
+      }
+    } catch (err) {
+      console.error('Sign out failed, clearing local session anyway:', err)
+    } finally {
+      setUser(null)
+      sessionStorage.removeItem('halo_user')
+      sessionStorage.removeItem('halo_role')
+      sessionStorage.removeItem('halo_org_name')
+      sessionStorage.removeItem('halo_org_verified')
+      sessionStorage.removeItem(DEMO_USER_KEY)
+    }
   }
 
   return (
