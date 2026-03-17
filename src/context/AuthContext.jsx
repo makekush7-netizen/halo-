@@ -25,6 +25,15 @@ Amplify.configure({
 })
 
 const AuthContext = createContext(null)
+const DEMO_USER_KEY = 'halo_demo_user'
+
+function isCognitoConfigured() {
+  const poolId = import.meta.env.VITE_COGNITO_USER_POOL_ID || ''
+  const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID || ''
+  if (!poolId || !clientId) return false
+  if (poolId.includes('XXXX') || clientId.includes('XXXX')) return false
+  return true
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -37,16 +46,36 @@ export function AuthProvider({ children }) {
 
   async function checkCurrentUser() {
     try {
+      if (!isCognitoConfigured()) {
+        const stored = sessionStorage.getItem(DEMO_USER_KEY)
+        if (stored) {
+          const demoUser = JSON.parse(stored)
+          setUser(demoUser)
+        } else {
+          setUser(null)
+        }
+        return
+      }
       const currentUser = await getCurrentUser()
       const session = await fetchAuthSession()
       const payload = session.tokens?.idToken?.payload || {}
+      const storedRole = sessionStorage.getItem('halo_role') || 'member'
+      const storedOrgName = sessionStorage.getItem('halo_org_name') || ''
+      const storedOrgVerified = sessionStorage.getItem('halo_org_verified') || ''
       setUser({
         username: currentUser.username,
         email: payload.email || currentUser.signInDetails?.loginId,
         name: payload.name || payload['cognito:username'],
         picture: payload.picture,
         userId: currentUser.userId,
+        role: storedRole,
+        orgName: storedOrgName,
+        orgVerified: storedOrgVerified,
       })
+      sessionStorage.setItem('halo_user', JSON.stringify({
+        role: storedRole,
+        displayName: payload.name || payload['cognito:username'] || payload.email || currentUser.username,
+      }))
     } catch {
       setUser(null)
     } finally {
@@ -57,6 +86,21 @@ export function AuthProvider({ children }) {
   async function handleSignIn(email, password) {
     setError(null)
     try {
+      if (!isCognitoConfigured()) {
+        const role = sessionStorage.getItem('halo_role') || 'member'
+        const demoUser = {
+          username: email,
+          email,
+          name: email.split('@')[0] || 'Halo User',
+          role,
+          userId: email,
+          orgName: sessionStorage.getItem('halo_org_name') || '',
+          orgVerified: sessionStorage.getItem('halo_org_verified') || '',
+        }
+        sessionStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser))
+        setUser(demoUser)
+        return { success: true }
+      }
       await signIn({ username: email, password })
       await checkCurrentUser()
       return { success: true }
@@ -69,6 +113,21 @@ export function AuthProvider({ children }) {
   async function handleSignUp(email, password, name) {
     setError(null)
     try {
+      if (!isCognitoConfigured()) {
+        const role = sessionStorage.getItem('halo_role') || 'member'
+        const demoUser = {
+          username: email,
+          email,
+          name: name || email.split('@')[0] || 'Halo User',
+          role,
+          userId: email,
+          orgName: sessionStorage.getItem('halo_org_name') || '',
+          orgVerified: sessionStorage.getItem('halo_org_verified') || '',
+        }
+        sessionStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser))
+        setUser(demoUser)
+        return { success: true, needsConfirmation: false, userId: email }
+      }
       const result = await signUp({
         username: email,
         password,
@@ -85,6 +144,9 @@ export function AuthProvider({ children }) {
 
   async function handleConfirmSignUp(email, code) {
     try {
+      if (!isCognitoConfigured()) {
+        return { success: true }
+      }
       await confirmSignUp({ username: email, confirmationCode: code })
       return { success: true }
     } catch (err) {
@@ -94,6 +156,10 @@ export function AuthProvider({ children }) {
 
   async function handleGoogleSignIn() {
     try {
+      if (!isCognitoConfigured()) {
+        setError('Google sign-in needs real Cognito configuration.')
+        return
+      }
       await signInWithRedirect({ provider: 'Google' })
     } catch (err) {
       setError(err.message)
@@ -103,6 +169,11 @@ export function AuthProvider({ children }) {
   async function handleSignOut() {
     await signOut()
     setUser(null)
+    sessionStorage.removeItem('halo_user')
+    sessionStorage.removeItem('halo_role')
+    sessionStorage.removeItem('halo_org_name')
+    sessionStorage.removeItem('halo_org_verified')
+    sessionStorage.removeItem(DEMO_USER_KEY)
   }
 
   return (

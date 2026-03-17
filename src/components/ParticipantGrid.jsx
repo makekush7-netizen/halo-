@@ -1,20 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MicOff, Expand, Monitor } from 'lucide-react'
-import { useParticipants, VideoTrack } from '@livekit/components-react'
+import { useTracks, VideoTrack } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 
 // Helper to get initials for the fallback avatar
 const getInitials = (name) => name?.substring(0, 2).toUpperCase() || 'P'
 
 // The individual tile component
-function Tile({ participant, isSpotlight, onClick }) {
+function Tile({ trackRef, isSpotlight, onClick }) {
   // In a real app, you'd fetch this from your AI attention lambda. Defaulting to 90 for demo.
   const attention = 90;
   const cn = `glass-panel ${isSpotlight ? 'spotlight' : 'strip-tile'} ${attention < 50 ? 'low-attn' : ''}`
   
-  const isMuted = !participant.isMicrophoneEnabled;
-  const isCameraOn = participant.isCameraEnabled;
+  const participant = trackRef?.participant
+  const isMuted = !participant?.isMicrophoneEnabled
+  const isCameraOn = participant?.isCameraEnabled
 
   return (
     <motion.div
@@ -47,11 +48,10 @@ function Tile({ participant, isSpotlight, onClick }) {
       }}
     >
       {/* LiveKit Video Track */}
-      {isCameraOn ? (
-        <VideoTrack 
-          participant={participant} 
-          source={Track.Source.Camera} 
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+      {isCameraOn && trackRef ? (
+        <VideoTrack
+          trackRef={trackRef}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
         /* Fallback Avatar */
@@ -69,7 +69,7 @@ function Tile({ participant, isSpotlight, onClick }) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
           }}
         >
-          {getInitials(participant.name || participant.identity)}
+          {getInitials(participant?.name || participant?.identity)}
         </motion.div>
       )}
 
@@ -88,7 +88,7 @@ function Tile({ participant, isSpotlight, onClick }) {
         }}
       >
         <span style={{ color: 'white', fontSize: isSpotlight ? 14 : 12, fontWeight: 500 }}>
-          {participant.name || participant.identity}
+          {participant?.name || participant?.identity || 'Guest'}
         </span>
         {isMuted && <MicOff size={isSpotlight ? 14 : 12} color="var(--status-red)" />}
       </motion.div>
@@ -105,37 +105,114 @@ function Tile({ participant, isSpotlight, onClick }) {
 
 // Accepts screenShare prop from parent, but participants are pulled from LiveKit Room context
 export default function ParticipantGrid({ screenShare, annotating }) {
-  const participants = useParticipants(); // LiveKit hook
+  const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { withPlaceholder: true })
+  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera)
+  const screenTracks = tracks.filter((t) => t.source === Track.Source.ScreenShare)
+  const annotationCanvasRef = useRef(null)
+  const drawContainerRef = useRef(null)
+  const isDrawingRef = useRef(false)
+  const lastPointRef = useRef({ x: 0, y: 0 })
   
   // Track active speaker: default to whoever is speaking or the first participant
   const [activeSpeakerId, setActiveSpeakerId] = useState(null)
 
   useEffect(() => {
-    if (!participants.length) return;
-    const speaker = participants.find(p => p.isSpeaking);
+    if (!cameraTracks.length) return;
+    const speaker = cameraTracks.find((t) => t.participant?.isSpeaking)
     if (speaker) {
-      setActiveSpeakerId(speaker.identity);
-    } else if (!activeSpeakerId || !participants.find(p => p.identity === activeSpeakerId)) {
+      setActiveSpeakerId(speaker.participant?.identity)
+    } else if (!activeSpeakerId || !cameraTracks.find((t) => t.participant?.identity === activeSpeakerId)) {
       // Fallback to first participant if current active speaker left
-      setActiveSpeakerId(participants[0].identity);
+      setActiveSpeakerId(cameraTracks[0].participant?.identity)
     }
-  }, [participants, activeSpeakerId])
+  }, [cameraTracks, activeSpeakerId])
 
   // Split participants into Hero (spotlight) and Strip (others)
-  const heroParticipant = participants.find(p => p.identity === activeSpeakerId) || participants[0]
-  const stripParticipants = participants.filter(p => p.identity !== heroParticipant?.identity)
+  const heroTrack = cameraTracks.find((t) => t.participant?.identity === activeSpeakerId) || cameraTracks[0]
+  const stripTracks = cameraTracks.filter((t) => t.participant?.identity !== heroTrack?.participant?.identity)
 
-  if (participants.length === 0) {
+  // Find if anyone is screen sharing (real LiveKit check)
+  const screenShareTrack = screenTracks[0]
+  const isScreenSharingReal = screenShare || !!screenShareTrack
+
+  useEffect(() => {
+    if (!isScreenSharingReal || !annotating || !annotationCanvasRef.current || !drawContainerRef.current) {
+      return
+    }
+
+    const canvas = annotationCanvasRef.current
+    const container = drawContainerRef.current
+    const rect = container.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+    canvas.style.width = `${rect.width}px`
+    canvas.style.height = `${rect.height}px`
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.scale(ratio, ratio)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = '#ffde59'
+    ctx.lineWidth = 3
+  }, [isScreenSharingReal, annotating])
+
+  if (cameraTracks.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: 'white' }}>Waiting for participants to join...</p>
       </div>
-    );
+    )
   }
 
-  // Find if anyone is screen sharing (real LiveKit check)
-  const screenShareParticipant = participants.find(p => p.isScreenShareEnabled);
-  const isScreenSharingReal = screenShare || !!screenShareParticipant;
+  const getPoint = (event) => {
+    const canvas = annotationCanvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const point = event.touches?.[0] || event
+    return {
+      x: point.clientX - rect.left,
+      y: point.clientY - rect.top,
+    }
+  }
+
+  const startDrawing = (event) => {
+    if (!annotating) return
+    if (event.cancelable) event.preventDefault()
+    const ctx = annotationCanvasRef.current?.getContext('2d')
+    const point = getPoint(event)
+    if (!ctx || !point) return
+    isDrawingRef.current = true
+    lastPointRef.current = point
+    ctx.beginPath()
+    ctx.moveTo(point.x, point.y)
+  }
+
+  const draw = (event) => {
+    if (!annotating || !isDrawingRef.current) return
+    if (event.cancelable) event.preventDefault()
+    const ctx = annotationCanvasRef.current?.getContext('2d')
+    const point = getPoint(event)
+    if (!ctx || !point) return
+    ctx.beginPath()
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y)
+    ctx.lineTo(point.x, point.y)
+    ctx.stroke()
+    lastPointRef.current = point
+  }
+
+  const stopDrawing = () => {
+    isDrawingRef.current = false
+  }
+
+  const clearAnnotations = () => {
+    const canvas = annotationCanvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
 
   return (
     <div style={{ 
@@ -160,14 +237,13 @@ export default function ParticipantGrid({ screenShare, annotating }) {
           maxWidth: 1400,
           aspectRatio: isScreenSharingReal ? 'auto' : '16/9',
           position: 'relative'
-        }}>
+        }} ref={drawContainerRef}>
           {isScreenSharingReal ? (
             // Screen Share overrides hero entirely
             <div className="glass-panel" style={{ width: '100%', height: '100%', border: '1px solid var(--accent-cyan)' }}>
-              {screenShareParticipant ? (
+              {screenShareTrack ? (
                  <VideoTrack 
-                   participant={screenShareParticipant} 
-                   source={Track.Source.ScreenShare} 
+                   trackRef={screenShareTrack}
                    style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                  />
               ) : (
@@ -178,14 +254,33 @@ export default function ParticipantGrid({ screenShare, annotating }) {
                   </div>
                 </div>
               )}
+
+              {annotating && (
+                <>
+                  <canvas
+                    ref={annotationCanvasRef}
+                    className="annotation-canvas"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
+                  <button className="annotation-clear-btn" onClick={clearAnnotations}>
+                    Clear
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             // No Screen Share: Hero is the active speaker
-            heroParticipant && (
+            heroTrack && (
               <AnimatePresence mode="popLayout">
                 <Tile 
-                  key={`hero-${heroParticipant.identity}`} 
-                  participant={heroParticipant} 
+                  key={`hero-${heroTrack.participant?.identity || 'hero'}`} 
+                  trackRef={heroTrack} 
                   isSpotlight={true} 
                 />
               </AnimatePresence>
@@ -211,16 +306,16 @@ export default function ParticipantGrid({ screenShare, annotating }) {
       }}>
         <AnimatePresence mode="popLayout">
           {/* If screen sharing, the previous "active speaker" is now in the strip too */}
-          {(isScreenSharingReal ? participants : stripParticipants).map((p) => (
-            <div key={`strip-${p.identity}`} style={{ 
+          {(isScreenSharingReal ? cameraTracks : stripTracks).map((trackRef) => (
+            <div key={`strip-${trackRef.participant?.identity || 'strip'}`} style={{ 
               width: isScreenSharingReal ? '100%' : 220, 
               height: isScreenSharingReal ? 160 : '100%',
               flexShrink: 0 
             }}>
               <Tile 
-                participant={p} 
+                trackRef={trackRef} 
                 isSpotlight={false} 
-                onClick={() => !isScreenSharingReal && setActiveSpeakerId(p.identity)} 
+                onClick={() => !isScreenSharingReal && setActiveSpeakerId(trackRef.participant?.identity)} 
               />
             </div>
           ))}

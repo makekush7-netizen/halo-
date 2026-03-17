@@ -45,7 +45,7 @@ export default function LandingPage() {
   const [quickCode, setQuickCode] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
   const role = user?.role || 'member'
-  const canAccessCockpit = role === 'admin' || role === 'co-admin'
+  const canAccessCockpit = role === 'admin' || role === 'co-admin' || (role === 'member' && !!user?.orgName)
   const displayName = user?.name || user?.email || user?.username || 'Halo User'
   const initials = displayName.slice(0, 2).toUpperCase()
 

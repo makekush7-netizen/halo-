@@ -1,4 +1,5 @@
 import { X, BarChart2, Eye, EyeOff, Mic, MicOff, MousePointer2 } from 'lucide-react'
+import { useParticipants } from '@livekit/components-react'
 
 function attentionClass(score) {
   if (score >= 70) return 'high'
@@ -23,8 +24,21 @@ function ScoreRing({ score }) {
   )
 }
 
-export default function AttentionPanel({ participants, onClose }) {
-  const avg = Math.round(participants.reduce((a, p) => a + p.attention, 0) / participants.length)
+export default function AttentionPanel({ onClose }) {
+  const participants = useParticipants()
+  const normalized = participants.map((participant) => {
+    const isMuted = !participant.isMicrophoneEnabled
+    const isCameraOn = participant.isCameraEnabled
+    const base = isCameraOn && !isMuted ? 82 : isCameraOn || !isMuted ? 64 : 42
+    return {
+      id: participant.identity,
+      name: participant.name || participant.identity,
+      attention: base,
+      isMuted,
+      isCameraOn,
+    }
+  })
+  const avg = normalized.length ? Math.round(normalized.reduce((a, p) => a + p.attention, 0) / normalized.length) : 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -64,7 +78,7 @@ export default function AttentionPanel({ participants, onClose }) {
 
       {/* Participant list */}
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
-        {participants.map(p => {
+        {normalized.map(p => {
           const cls = attentionClass(p.attention)
           return (
             <div key={p.id} style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', gap: 10 }}>

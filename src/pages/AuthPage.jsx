@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight, Chrome } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -7,13 +7,18 @@ import BackgroundParticles from '../components/BackgroundParticles.jsx'
 
 export default function AuthPage({ mode = 'login' }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { signIn, signUp, confirmSignUp, googleSignIn, error } = useAuth()
   const [step, setStep] = useState('form') // 'form' | 'confirm'
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
   const [pendingEmail, setPendingEmail] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', code: '' })
+  const query = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const [orgMode, setOrgMode] = useState(query.get('org') === '1')
+  const [roleChoice, setRoleChoice] = useState('admin')
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', code: '', orgName: '' })
+  const cognitoConfigured = !(import.meta.env.VITE_COGNITO_USER_POOL_ID || '').includes('XXXX')
 
   const isLogin = mode === 'login'
 
@@ -25,12 +30,22 @@ export default function AuthPage({ mode = 'login' }) {
     e.preventDefault()
     setFormError('')
     setLoading(true)
+    const nextRoute = orgMode ? '/cockpit' : '/join'
+    const selectedRole = orgMode ? roleChoice : 'member'
+    sessionStorage.setItem('halo_role', selectedRole)
+    if (orgMode) {
+      sessionStorage.setItem('halo_org_name', formData.orgName.trim())
+      sessionStorage.setItem('halo_org_verified', 'verified')
+    } else {
+      sessionStorage.removeItem('halo_org_name')
+      sessionStorage.removeItem('halo_org_verified')
+    }
 
     if (step === 'confirm') {
       const result = await confirmSignUp(pendingEmail, formData.code)
       if (result.success) {
         await signIn(pendingEmail, formData.password)
-        navigate('/cockpit')
+        navigate(nextRoute)
       } else {
         setFormError(result.error)
       }
@@ -40,7 +55,7 @@ export default function AuthPage({ mode = 'login' }) {
 
     if (isLogin) {
       const result = await signIn(formData.email, formData.password)
-      if (result.success) navigate('/cockpit')
+      if (result.success) navigate(nextRoute)
       else setFormError(result.error)
     } else {
       const result = await signUp(formData.email, formData.password, formData.name)
@@ -49,7 +64,7 @@ export default function AuthPage({ mode = 'login' }) {
           setPendingEmail(formData.email)
           setStep('confirm')
         } else {
-          navigate('/cockpit')
+          navigate(nextRoute)
         }
       } else {
         setFormError(result.error)
@@ -85,25 +100,46 @@ export default function AuthPage({ mode = 'login' }) {
           WebkitBackdropFilter: 'blur(40px) saturate(150%)',
         }}>
           {/* Header */}
-          <div style={{ marginBottom: 36, textAlign: 'center' }}>
+          <div style={{ marginBottom: 28, textAlign: 'center' }}>
             <h1 className="display-title" style={{ fontSize: 30, marginBottom: 8 }}>
-              {step === 'confirm' ? 'Check Your Email' : isLogin ? 'Welcome back' : 'Create your account'}
+              {step === 'confirm' ? 'Check Your Email' : isLogin ? 'Welcome back' : orgMode ? 'Create your organization' : 'Create your account'}
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
               {step === 'confirm'
                 ? `We sent a 6-digit code to ${pendingEmail}`
                 : isLogin
-                ? "Sign in to your Halo admin dashboard"
-                : "Start monitoring your sessions in minutes"}
+                ? (orgMode ? 'Sign in to your organization cockpit' : 'Sign in to create or join meetings')
+                : (orgMode ? 'Admins run the cockpit and manage members' : 'Start meetings instantly with shareable links')}
             </p>
           </div>
 
-          {/* Google Auth */}
           {step === 'form' && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 22, justifyContent: 'center' }}>
+              <button
+                type="button"
+                className={`btn ${!orgMode ? 'btn-lime' : 'btn-ghost'}`}
+                onClick={() => setOrgMode(false)}
+                style={{ padding: '10px 16px', fontSize: 13 }}
+              >
+                Personal
+              </button>
+              <button
+                type="button"
+                className={`btn ${orgMode ? 'btn-lime' : 'btn-ghost'}`}
+                onClick={() => setOrgMode(true)}
+                style={{ padding: '10px 16px', fontSize: 13 }}
+              >
+                Organization
+              </button>
+            </div>
+          )}
+
+          {/* Google Auth */}
+          {step === 'form' && cognitoConfigured && (
             <>
               <button
                 onClick={googleSignIn}
-                className="btn btn-glass"
+                className="btn btn-ghost"
                 style={{ width: '100%', padding: '14px', marginBottom: 24, fontSize: 15, gap: 12 }}
               >
                 <svg width="20" height="20" viewBox="0 0 48 48">
@@ -138,6 +174,18 @@ export default function AuthPage({ mode = 'login' }) {
               </div>
             ) : (
               <>
+                {orgMode && !isLogin && (
+                  <div>
+                    <label className="label">Organization Name</label>
+                    <input
+                      required
+                      className="input"
+                      placeholder="e.g. Halo Labs"
+                      value={formData.orgName}
+                      onChange={setField('orgName')}
+                    />
+                  </div>
+                )}
                 {!isLogin && (
                   <div>
                     <label className="label">Full Name</label>
@@ -164,6 +212,20 @@ export default function AuthPage({ mode = 'login' }) {
                     </button>
                   </div>
                 </div>
+                {orgMode && isLogin && (
+                  <div>
+                    <label className="label">Organization Role</label>
+                    <select
+                      className="input"
+                      value={roleChoice}
+                      onChange={(e) => setRoleChoice(e.target.value)}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="co-admin">Co-Admin</option>
+                      <option value="member">Teacher</option>
+                    </select>
+                  </div>
+                )}
               </>
             )}
 
@@ -173,8 +235,8 @@ export default function AuthPage({ mode = 'login' }) {
               </div>
             )}
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: 16, fontSize: 15, marginTop: 4 }} disabled={loading}>
-              {loading ? 'Please wait...' : step === 'confirm' ? 'Verify & Sign In' : isLogin ? <>Sign In <ArrowRight size={16} /></> : <>Create Account <ArrowRight size={16} /></>}
+            <button type="submit" className="btn btn-lime" style={{ width: '100%', padding: 16, fontSize: 15, marginTop: 4 }} disabled={loading}>
+              {loading ? 'Please wait...' : step === 'confirm' ? 'Verify & Sign In' : isLogin ? <>Sign In <ArrowRight size={16} /></> : orgMode ? <>Create Organization <ArrowRight size={16} /></> : <>Create Account <ArrowRight size={16} /></>}
             </button>
           </form>
 

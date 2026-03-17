@@ -7,7 +7,22 @@ const docClient = DynamoDBDocumentClient.from(client);
 exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { roomName, hostDetails } = body;
+    const {
+      roomName,
+      hostDetails,
+      orgId,
+      visibility,
+      ownerUserId,
+      ownerName,
+      ownerRole,
+      assignedTeacherUserId,
+      assignedTeacherName,
+      startsAt,
+      endsAt,
+      timezone,
+      meetingType,
+      status,
+    } = body;
     
     if (!roomName) throw new Error('roomName is required');
 
@@ -21,10 +36,21 @@ exports.handler = async (event) => {
         name: roomName,
         host: hostDetails?.name || 'Admin',
         hostId: hostDetails?.id || 'unknown',
+        ownerUserId: ownerUserId || hostDetails?.id || 'unknown',
+        ownerName: ownerName || hostDetails?.name || 'Admin',
+        ownerRole: ownerRole || 'member',
+        assignedTeacherUserId: assignedTeacherUserId || null,
+        assignedTeacherName: assignedTeacherName || null,
+        orgId: orgId || 'personal',
+        visibility: visibility || 'org',
+        startsAt: startsAt || new Date().toISOString(),
+        endsAt: endsAt || null,
+        timezone: timezone || 'UTC',
+        meetingType: meetingType || 'instant',
         participants: 0,
         attention: 100,
         createdAt: new Date().toISOString(),
-        status: 'ACTIVE'
+        status: status || 'ACTIVE'
       }
     });
 

@@ -6,11 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:backend": "node scripts/deploy-backend.js",
+    "deploy:lambdas": "node scripts/deploy-lambdas.cjs",
+    "deploy:api": "node scripts/deploy-api.cjs"
   },
   "dependencies": {
+    "@aws-sdk/client-apigatewayv2": "^3.1010.0",
+    "@aws-sdk/client-iam": "^3.1010.0",
+    "@aws-sdk/client-lambda": "^3.1010.0",
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.1.2",
+    "archiver": "^7.0.1",
     "aws-amplify": "^6.16.3",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",
